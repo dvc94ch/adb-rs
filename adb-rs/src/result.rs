@@ -1,29 +1,29 @@
-use failure_derive::Fail;
+use thiserror::Error;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum AdbError {
-  #[fail(display = "io error: {}", _0)]
-  Io(#[cause] ::std::io::Error),
+  #[error("io error: {}", _0)]
+  Io(std::io::Error),
 
-  #[fail(display = "data crc mismatch")]
+  #[error("data crc mismatch")]
   Crc,
 
-  #[fail(display = "auth not supported")]
+  #[error("auth not supported")]
   AuthNotSupported,
 
-  #[fail(display = "unknown command: {:x}", _0)]
+  #[error("unknown command: {:x}", _0)]
   UnknownCommand(u32),
 
-  #[fail(display = "unexpected command: {:?}", _0)]
+  #[error("unexpected command: {:?}", _0)]
   UnexpectedCommand(crate::message::Command),
 
-  #[fail(display = "unexpected data: {:?}", _0)]
+  #[error("unexpected data: {:?}", _0)]
   UnexpectedData(Vec<u8>),
 
-  #[fail(display = "disconnected")]
+  #[error("disconnected")]
   Disconnected,
 
-  #[fail(display = "fail: {}", _0)]
+  #[error("fail: {}", _0)]
   Fail(String),
 }
 

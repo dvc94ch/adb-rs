@@ -1,4 +1,5 @@
-use bytes::*;
+use bytes::{BufMut, BytesMut};
+use byteorder::{ByteOrder, LittleEndian};
 use std::io::prelude::*;
 
 use crate::client::{AdbStream, AdbStreamPacket, Command};

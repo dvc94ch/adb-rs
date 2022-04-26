@@ -1,4 +1,3 @@
-use bytes::buf::FromBuf;
 use bytes::{Bytes, BytesMut};
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
 use std::collections::HashMap;
@@ -254,7 +253,7 @@ impl AdbStreamPacket {
     let bytes = payload.as_ref();
     AdbStreamPacket {
       command: Command::A_WRTE,
-      payload: Bytes::from_buf(bytes),
+      payload: Bytes::from(bytes.to_vec()),
     }
   }
 
@@ -293,8 +292,8 @@ impl Drop for AdbConnection {
     use std::net::Shutdown;
     self.tcp_stream.shutdown(Shutdown::Both).ok();
     let (conn_writer_s, _) = bounded::<ConnectionPacket>(0);
-    ::std::mem::replace(&mut self.conn_writer_s, conn_writer_s);
-    for w in ::std::mem::replace(&mut self.workers, vec![]) {
+    self.conn_writer_s = conn_writer_s;
+    for w in std::mem::replace(&mut self.workers, vec![]) {
       w.join().ok();
     }
   }

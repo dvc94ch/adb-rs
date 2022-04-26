@@ -1,5 +1,5 @@
 use crate::result::*;
-use bytes::{ByteOrder, LittleEndian};
+use byteorder::{ByteOrder, LittleEndian};
 use num_traits::FromPrimitive;
 use std::io::prelude::*;
 

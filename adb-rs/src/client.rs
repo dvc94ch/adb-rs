@@ -1,5 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use crossbeam_channel::{bounded, select, unbounded, Receiver, Sender};
+use rsa::{Hash, PaddingScheme, RsaPrivateKey, RsaPublicKey};
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
@@ -7,17 +8,21 @@ use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 
 pub use crate::message::Command;
+
+use crate::pubkey::AndroidPublicKey;
 use crate::message::{Connect, Header};
 use crate::result::*;
 
 #[derive(Debug)]
 pub struct AdbClient {
+    private_key: RsaPrivateKey,
     system_identity: String,
 }
 
 impl AdbClient {
-    pub fn new(system_identity: &str) -> Self {
+    pub fn new(private_key: RsaPrivateKey, system_identity: &str) -> Self {
         AdbClient {
+            private_key,
             system_identity: system_identity.to_string(),
         }
     }
@@ -36,16 +41,51 @@ impl AdbClient {
 
         Connect::new(&self.system_identity).encode(&mut stream)?;
 
-        let resp = Header::decode(&mut stream)?;
-        let data = match resp.get_command() {
-            Some(Command::A_CNXN) => resp.decode_data(&mut stream)?,
-            Some(Command::A_AUTH) => {
-                return Err(AdbError::AuthNotSupported);
+        let mut auth = 0;
+        let (resp, data) = loop {
+            let resp = Header::decode(&mut stream)?;
+            match resp.get_command() {
+                Some(Command::A_CNXN) => {
+                    println!("connected");
+                    let data = resp.decode_data(&mut stream)?;
+                    break (resp, data);
+                }
+                Some(Command::A_AUTH) => match auth {
+                    0 => {
+                        let token = resp.decode_data(&mut stream)?;
+                        let padding = PaddingScheme::new_pkcs1v15_sign(Some(Hash::SHA1));
+                        let signature = self.private_key.sign(padding, &token).unwrap();
+                        assert_eq!(signature.len(), 256);
+                        let header = Header::new(Command::A_AUTH)
+                            .arg0(2u32)
+                            .data(&signature)
+                            .finalize();
+                        header.encode(&mut stream)?;
+                        stream.write_all(&signature)?;
+                        auth += 1;
+                    }
+                    1 => {
+                        let public_key = RsaPublicKey::from(&self.private_key);
+                        let public_key = AndroidPublicKey::new(public_key);
+                        let public_key = public_key.encode().unwrap();
+                        assert_eq!(public_key.len(), 701);
+                        let header = Header::new(Command::A_AUTH)
+                            .arg0(3u32)
+                            .data(&public_key)
+                            .finalize();
+                        header.encode(&mut stream)?;
+                        stream.write_all(public_key.as_bytes())?;
+                        auth += 1;
+                    }
+                    _ => {
+                        return Err(AdbError::AuthNotSupported);
+                    }
+                },
+                Some(cmd) => {
+                    return Err(AdbError::UnexpectedCommand(cmd));
+                }
+                None => return Err(AdbError::UnknownCommand(resp.command)),
             }
-            Some(cmd) => {
-                return Err(AdbError::UnexpectedCommand(cmd));
-            }
-            None => return Err(AdbError::UnknownCommand(resp.command)),
         };
 
         let device_id = String::from_utf8_lossy(&data);
@@ -447,5 +487,20 @@ impl AdbStream {
             command: Command::A_CLSE,
             payload: Bytes::new(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rsa::pkcs8::DecodePrivateKey;
+
+    #[test]
+    fn test_connect() {
+        env_logger::try_init().ok();
+        let private_key = RsaPrivateKey::read_pkcs8_pem_file("/home/dvc/.android/adbkey").unwrap();
+        AdbClient::new(private_key, "host::")
+            .connect("192.168.2.43:5555")
+            .unwrap();
     }
 }

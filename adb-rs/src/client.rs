@@ -490,6 +490,18 @@ impl AdbStream {
     }
 }
 
+impl Iterator for AdbStream {
+    type Item = Vec<u8>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Ok(packet) = self.recv_command(Command::A_WRTE) {
+            Some(packet.payload.to_vec())
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
